@@ -43,17 +43,27 @@ namespace DeezerPresence
 
             ulong lastPosition = 0;
             string lastTitle = null;
+            bool lastPaused = false;
 
             while (true)
             {
                 try
                 {
-                    var (title, artist, pos, dur) = await GetMediaInfo();
-                    if (title != null && (title != lastTitle || Math.Abs((long)pos - (long)lastPosition) > 5))
+                    var (title, artist, pos, dur, isPaused) = await GetMediaInfo();
+                    if (title != null && (title != lastTitle || Math.Abs((long)pos - (long)lastPosition) > 5 || isPaused != lastPaused))
                     {
-                        await UpdatePresence(title, artist, pos, dur);
+                        await UpdatePresence(title, artist, pos, dur, isPaused);
                         lastTitle = title;
                         lastPosition = (ulong)pos;
+                        lastPaused = isPaused;
+                    }
+                    // Si aucune musique n'est détectée, on peut effacer la présence
+                    else if (title == null && lastTitle != null)
+                    {
+                        _rpc.ClearPresence();
+                        lastTitle = null;
+                        lastPosition = 0;
+                        lastPaused = false;
                     }
                 }
                 catch (Exception ex)
@@ -65,43 +75,50 @@ namespace DeezerPresence
             }
         }
 
-        private static async Task<(string title, string artist, double pos, double dur)> GetMediaInfo()
+        private static async Task<(string title, string artist, double pos, double dur, bool isPaused)> GetMediaInfo()
         {
             var sessions = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
             var session = sessions.GetCurrentSession();
             if (session?.SourceAppUserModelId?.ToLower().Contains("deezer") == true)
             {
                 var playback = session.GetPlaybackInfo();
-                if (playback.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing)
+                var props = await session.TryGetMediaPropertiesAsync();
+                var timeline = session.GetTimelineProperties();
+
+                if (playback.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing ||
+                    playback.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused)
                 {
-                    var props = await session.TryGetMediaPropertiesAsync();
-                    var timeline = session.GetTimelineProperties();
                     return (props.Title, props.Artist,
                         timeline.Position.TotalSeconds,
-                        timeline.EndTime.TotalSeconds);
+                        timeline.EndTime.TotalSeconds,
+                        playback.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused);
                 }
             }
-            return (null, null, 0, 0);
+            return (null, null, 0, 0, false);
         }
 
-        private static async Task UpdatePresence(string title, string artist, double pos, double dur)
+        private static async Task UpdatePresence(string title, string artist, double pos, double dur, bool isPaused)
         {
             var start = DateTimeOffset.UtcNow.AddSeconds(-pos).UtcDateTime;
             var endTime = start.AddSeconds(dur);
 
             var details = $"🎵 {title}";
-            var state = string.IsNullOrEmpty(artist) ? "Écoute en cours" : $"par {artist}";
+            string state;
+            if (isPaused)
+                state = "⏸️ En pause";
+            else
+                state = string.IsNullOrEmpty(artist) ? "Écoute en cours" : $"par {artist}";
 
             var presence = new RichPresence()
             {
                 Details = details,
                 State = state,
-                Timestamps = new Timestamps
+                Timestamps = isPaused ? null : new Timestamps
                 {
                     Start = start,
                     End = endTime
                 },
-                Assets = new Assets { LargeImageKey = "default", LargeImageText = "Lecture en cours" }
+                Assets = new Assets { LargeImageKey = "default", LargeImageText = isPaused ? "En pause" : "Lecture en cours" }
             };
 
             _rpc.SetPresence(presence);
