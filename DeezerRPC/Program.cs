@@ -11,9 +11,11 @@ namespace DeezerPresence
     {
         private const bool DEBUG = false; // Mettre à true pour activer le mode debug
 
-        // Votre client ID Discord
         private const string DISCORD_CLIENT_ID = "1234921022856237196";
         private static DiscordRpcClient _rpc;
+
+        private static GlobalSystemMediaTransportControlsSessionManager sessionManager;
+        private static GlobalSystemMediaTransportControlsSession session;
 
         [STAThread]
         static void Main()
@@ -41,87 +43,98 @@ namespace DeezerPresence
             _rpc.Logger = new ConsoleLogger() { Level = LogLevel.Warning };
             _rpc.Initialize();
 
-            ulong lastPosition = 0;
-            string lastTitle = null;
-            bool lastPaused = false;
+            sessionManager = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
+            sessionManager.SessionsChanged += SessionManager_SessionsChanged;
 
-            while (true)
-            {
-                try
-                {
-                    var (title, artist, pos, dur, isPaused) = await GetMediaInfo();
-                    if (title != null && (title != lastTitle || Math.Abs((long)pos - (long)lastPosition) > 5 || isPaused != lastPaused))
-                    {
-                        await UpdatePresence(title, artist, pos, dur, isPaused);
-                        lastTitle = title;
-                        lastPosition = (ulong)pos;
-                        lastPaused = isPaused;
-                    }
-                    // Si aucune musique n'est détectée, on peut effacer la présence
-                    else if (title == null && lastTitle != null)
-                    {
-                        _rpc.ClearPresence();
-                        lastTitle = null;
-                        lastPosition = 0;
-                        lastPaused = false;
-                    }
-                }
-                catch (Exception ex)
-                {
-                    Console.Error.WriteLine($"Erreur boucle principale : {ex}");
-                }
+            // Initialisation de la session Deezer si présente
+            await UpdateSession();
 
-                await Task.Delay(1000);
-            }
+            // Garde l'application vivante (évite la sortie du thread)
+            Application.Run();
         }
 
-        private static async Task<(string title, string artist, double pos, double dur, bool isPaused)> GetMediaInfo()
+        private static async void SessionManager_SessionsChanged(GlobalSystemMediaTransportControlsSessionManager sender, object args)
         {
-            var sessions = await GlobalSystemMediaTransportControlsSessionManager.RequestAsync();
-            var session = sessions.GetCurrentSession();
+            await UpdateSession();
+        }
+
+        private static async Task UpdateSession()
+        {
+            // Désabonne les anciens handlers si besoin
+            if (session != null)
+            {
+                session.PlaybackInfoChanged -= Session_PlaybackInfoChanged;
+                session.MediaPropertiesChanged -= Session_MediaPropertiesChanged;
+            }
+
+            session = sessionManager.GetCurrentSession();
             if (session?.SourceAppUserModelId?.ToLower().Contains("deezer") == true)
             {
-                var playback = session.GetPlaybackInfo();
-                var props = await session.TryGetMediaPropertiesAsync();
-                var timeline = session.GetTimelineProperties();
-
-                if (playback.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing ||
-                    playback.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused)
-                {
-                    return (props.Title, props.Artist,
-                        timeline.Position.TotalSeconds,
-                        timeline.EndTime.TotalSeconds,
-                        playback.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused);
-                }
+                session.PlaybackInfoChanged += Session_PlaybackInfoChanged;
+                session.MediaPropertiesChanged += Session_MediaPropertiesChanged;
+                // Mise à jour immédiate
+                await UpdatePresenceFromSession();
             }
-            return (null, null, 0, 0, false);
+            else
+            {
+                _rpc.ClearPresence();
+            }
         }
 
-        private static async Task UpdatePresence(string title, string artist, double pos, double dur, bool isPaused)
+        private static async void Session_PlaybackInfoChanged(GlobalSystemMediaTransportControlsSession sender, PlaybackInfoChangedEventArgs args)
         {
-            var start = DateTimeOffset.UtcNow.AddSeconds(-pos).UtcDateTime;
-            var endTime = start.AddSeconds(dur);
+            await UpdatePresenceFromSession();
+        }
 
-            var details = $"🎵 {title}";
-            string state;
-            if (isPaused)
-                state = "⏸️ En pause";
-            else
-                state = string.IsNullOrEmpty(artist) ? "Écoute en cours" : $"par {artist}";
+        private static async void Session_MediaPropertiesChanged(GlobalSystemMediaTransportControlsSession sender, MediaPropertiesChangedEventArgs args)
+        {
+            await UpdatePresenceFromSession();
+        }
 
-            var presence = new RichPresence()
+        private static async Task UpdatePresenceFromSession()
+        {
+            if (session == null) return;
+
+            var playback = session.GetPlaybackInfo();
+            var props = await session.TryGetMediaPropertiesAsync();
+            var timeline = session.GetTimelineProperties();
+
+            if (props == null) return;
+
+            bool isPaused = playback.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Paused;
+            bool isPlaying = playback.PlaybackStatus == GlobalSystemMediaTransportControlsSessionPlaybackStatus.Playing;
+
+            if (isPlaying || isPaused)
             {
-                Details = details,
-                State = state,
-                Timestamps = isPaused ? null : new Timestamps
-                {
-                    Start = start,
-                    End = endTime
-                },
-                Assets = new Assets { LargeImageKey = "default", LargeImageText = isPaused ? "En pause" : "Lecture en cours" }
-            };
+                var title = props.Title;
+                var artist = props.Artist;
+                var pos = timeline.Position.TotalSeconds;
+                var dur = timeline.EndTime.TotalSeconds;
 
-            _rpc.SetPresence(presence);
+                var start = DateTimeOffset.UtcNow.AddSeconds(-pos).UtcDateTime;
+                var endTime = start.AddSeconds(dur);
+
+                var details = $"🎵 {title}";
+                string state = isPaused ? "⏸️ En pause" : (string.IsNullOrEmpty(artist) ? "Écoute en cours" : $"par {artist}");
+
+                var presence = new RichPresence()
+                {
+                    Details = details,
+                    State = state,
+                    Timestamps = isPaused ? null : new Timestamps
+                    {
+                        Start = start,
+                        End = endTime
+                    },
+                    Assets = new Assets { LargeImageKey = "default", LargeImageText = isPaused ? "En pause" : "Lecture en cours" }
+                };
+
+                _rpc.SetPresence(presence);
+            }
+            else
+            {
+                _rpc.ClearPresence();
+            }
         }
     }
 
