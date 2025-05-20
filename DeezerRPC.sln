@@ -1,0 +1,22 @@
+﻿
+Microsoft Visual Studio Solution File, Format Version 12.00
+Project("{8BC9CEB8-8B4A-11D0-8D11-00A0C91BC942}") = "DeezerRPC", "DeezerRPC.vcxproj", "{EC74607D-EF5D-4777-95BA-EF12CB764998}"
+EndProject
+Global
+	GlobalSection(SolutionConfigurationPlatforms) = preSolution
+		Debug|Win32 = Debug|Win32
+		Debug|x64 = Debug|x64
+		Release|Win32 = Release|Win32
+		Release|x64 = Release|x64
+	EndGlobalSection
+	GlobalSection(ProjectConfigurationPlatforms) = postSolution
+		{EC74607D-EF5D-4777-95BA-EF12CB764998}.Debug|Win32.ActiveCfg = Debug|Win32
+		{EC74607D-EF5D-4777-95BA-EF12CB764998}.Debug|Win32.Build.0 = Debug|Win32
+		{EC74607D-EF5D-4777-95BA-EF12CB764998}.Debug|x64.ActiveCfg = Debug|x64
+		{EC74607D-EF5D-4777-95BA-EF12CB764998}.Debug|x64.Build.0 = Debug|x64
+		{EC74607D-EF5D-4777-95BA-EF12CB764998}.Release|Win32.ActiveCfg = Release|Win32
+		{EC74607D-EF5D-4777-95BA-EF12CB764998}.Release|Win32.Build.0 = Release|Win32
+		{EC74607D-EF5D-4777-95BA-EF12CB764998}.Release|x64.ActiveCfg = Release|x64
+		{EC74607D-EF5D-4777-95BA-EF12CB764998}.Release|x64.Build.0 = Release|x64
+	EndGlobalSection
+EndGlobal
