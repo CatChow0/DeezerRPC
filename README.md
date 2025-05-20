@@ -2,7 +2,7 @@
 
 <img src="https://github.com/CatChow0/DeezerRPC/blob/main/DeezerRPC/Deezer-logo.jpg" alt="Systray Icon" width="128" height="128" />
 
-**Deezer Discord Rich Presence** is a standalone Windows application that displays your current Deezer playback status as a Discord Rich Presence. The app runs in the background and sits in the Windows notification area (system tray).
+**Deezer Discord Rich Presence** is a Windows application that displays your current Deezer playback status as a Discord Rich Presence. The app runs in the background and sits in the Windows notification area (system tray).
 
 ---
 
@@ -18,7 +18,6 @@
 ## ⚙️ Requirements
 
 * Windows 10 or later (64-bit recommended)
-* No .NET runtime installation needed (self-contained app)
 * Discord running and logged in
 * Deezer Desktop or the native Deezer app open
 
@@ -45,31 +44,12 @@
 
 ---
 
-## 🔧 Configuration
-
-The `Discord Client ID` is compiled into the executable. To change it:
-
-1. Clone the C# project.
-2. Open `Program.cs` and modify the `DISCORD_CLIENT_ID` constant.
-3. Rebuild with the command:
-
-   ```bash
-   dotnet publish -c Release -r win-x64 --self-contained true /p:PublishSingleFile=true
-   ```
-
----
-
 ## 🐞 Troubleshooting
 
 * **No status appears**
 
   * Ensure Discord is running and not in "Offline" mode.
   * Make sure Deezer Desktop is open and a track is playing.
-
-* **App crashes on startup**
-
-  * Confirm you downloaded the **win-x64** version for 64-bit Windows.
-  * Verify you did not enable "Trim unused code" if you rebuilt the app.
 
 * **No tray icon**
 
