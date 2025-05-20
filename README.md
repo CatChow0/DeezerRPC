@@ -1,6 +1,6 @@
 # Deezer Discord Rich Presence
 
-<img src="https://github.com/CatChow0/DeezerRPC/blob/main/DeezerRPC/Deezer-logo.jpg" alt="Systray Icon" width="128" height="128" />
+<img src="https://github.com/CatChow0/DeezerRPC/blob/main/Deezer-logo.jpg" alt="Systray Icon" width="128" height="128" />
 
 **Deezer Discord Rich Presence** is a Windows application that displays your current Deezer playback status as a Discord Rich Presence. The app runs in the background and sits in the Windows notification area (system tray).
 
