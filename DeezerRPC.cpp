@@ -128,69 +128,41 @@ std::string HttpGet(const std::wstring& host, const std::wstring& path) {
     return response;
 }
 
-std::string GetDeezerAlbumArtUrl(const std::string& title, const std::string& artist, const std::string& album = "") {
+// Structure pour stocker les infos Deezer d'une track
+struct DeezerTrackInfo {
+    std::string albumCover;
+    std::string artistImage;
+    int trackId = 0;
+    std::string trackUrl;
+};
+
+// Fonction unique pour récupérer toutes les infos d'une track Deezer
+DeezerTrackInfo GetDeezerTrackInfo(const std::string& title, const std::string& artist) {
+    DeezerTrackInfo info;
     try {
         std::string query = UrlEncode(title + " " + artist);
-        if (!album.empty()) {
-            query += " " + UrlEncode(album);
-        }
-
         std::wstring host = L"api.deezer.com";
-        std::wstring path = L"/search?q=" + std::wstring(query.begin(), query.end());
+        std::wstring path = L"/search/track?q=" + std::wstring(query.begin(), query.end());
 
         std::string response = HttpGet(host, path);
-        if (response.empty()) return "";
-
-        auto j = json::parse(response);
-
-        if (j.contains("data") && !j["data"].empty()) {
-            auto firstMatch = j["data"][0];
-            if (firstMatch.contains("album") && firstMatch["album"].contains("id")) {
-                int albumId = firstMatch["album"]["id"];
-                DebugLog("Trouvé album ID: ", albumId);
-
-                return "https://api.deezer.com/album/" + std::to_string(albumId) + "/image?size=big";
-            }
-        }
-    }
-    catch (const std::exception& e) {
-        DebugError("Erreur lors de la recuperation de la pochette: " + std::string(e.what()));
-    }
-
-    return "";
-}
-
-int GetDeezerArtistId(const std::string& artist) {
-    try {
-        std::string query = UrlEncode(artist);
-        std::wstring host = L"api.deezer.com";
-        std::wstring path = L"/search/artist?q=" + std::wstring(query.begin(), query.end());
-
-        std::string response = HttpGet(host, path);
-        if (response.empty()) return 0;
+        if (response.empty()) return info;
 
         auto j = json::parse(response);
         if (j.contains("data") && !j["data"].empty()) {
-            auto firstMatch = j["data"][0];
-            if (firstMatch.contains("id")) {
-                int artistId = firstMatch["id"];
-                DebugLog("Trouve artist ID: ", artistId);
-                return artistId;
-            }
-        }
+            auto track = j["data"][0];
+            info.trackId = track["id"];
+            if (track.contains("album") && track["album"].contains("cover_big"))
+                info.albumCover = track["album"]["cover_big"];
+            if (track.contains("artist") && track["artist"].contains("picture_big"))
+                info.artistImage = track["artist"]["picture_big"];
+			if (track.contains("link"))
+				info.trackUrl = track["link"];
+		}
     }
     catch (const std::exception& e) {
-        DebugError("Erreur lors de l image de l artiste : " + std::string(e.what()));
+        DebugError("Erreur lors de la récupération de la track Deezer: " + std::string(e.what()));
     }
-    return 0;
-}
-
-std::string GetDeezerArtistImageUrl(const std::string& artist) {
-    int artistId = GetDeezerArtistId(artist);
-    if (artistId > 0) {
-        return "https://api.deezer.com/artist/" + std::to_string(artistId) + "/image";
-    }
-    return "";
+    return info;
 }
 
 GlobalSystemMediaTransportControlsSession GetDeezerSession(GlobalSystemMediaTransportControlsSessionManager const& manager) {
@@ -409,9 +381,10 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 auto start = std::chrono::system_clock::now() - std::chrono::seconds((int)pos);
                 auto end = start + std::chrono::seconds((int)dur);
 
-                // Recuperer l URL de la pochette Deezer
-                std::string albumArtUrl = GetDeezerAlbumArtUrl(title_utf8, artist_utf8, album_utf8);
-                std::string artistImageUrl = GetDeezerArtistImageUrl(artist_utf8);
+                // Nouvelle récupération simplifiée via Deezer
+                DeezerTrackInfo trackInfo = GetDeezerTrackInfo(title_utf8, artist_utf8);
+                std::string albumArtUrl = trackInfo.albumCover;
+                std::string artistImageUrl = trackInfo.artistImage;
 
                 discordpp::Activity activity;
                 activity.SetType(discordpp::ActivityTypes::Playing);
