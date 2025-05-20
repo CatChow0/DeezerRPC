@@ -34,7 +34,7 @@
 ## ▶️ Usage
 
 1. Double-click `DeezerPresence.exe`.
-2. The app will start, and an icon will appear in the system tray: <img src="https://github.com/CatChow0/DeezerRPC/blob/main/DeezerRPC/Deezer-logo.jpg" alt="Systray Icon" width="16" height="16" />.
+2. The app will start, and an icon will appear in the system tray: <img src="https://github.com/CatChow0/DeezerRPC/blob/main/DeezerRPC/Deezer-logo.png" alt="Systray Icon" width="16" height="16" />.
 3. Open Deezer Desktop and play a track.
 4. Your Discord profile will automatically update with:
 
