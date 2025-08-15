@@ -387,7 +387,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 std::string artistImageUrl = trackInfo.artistImage;
 
                 discordpp::Activity activity;
-                activity.SetType(discordpp::ActivityTypes::Playing);
+                activity.SetType(discordpp::ActivityTypes::Listening);
                 activity.SetState(isPaused ? "⏸️ En pause" : ("par " + artist_utf8));
                 activity.SetDetails("🎵 " + title_utf8);
 
