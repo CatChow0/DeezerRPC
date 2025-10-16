@@ -27,6 +27,8 @@ const bool DEBUG = false;
 #define ID_TRAYICON 1
 #define ID_EXIT     2
 #define ID_AUTOSTART   3
+#define ID_DEEZER_RPC_IS_ENABLED 4
+#define ID_BRAVE_RPC_IS_ENABLED 5
 #define IDI_ICON1 101
 #define IDI_ICON2 102
 
@@ -39,6 +41,8 @@ const uint64_t DEEZER_APP_ID = 1234921022856237196;
 const uint64_t BROWSER_APP_ID = 1428086836760150219;
 std::atomic<bool> running = true;
 bool showConsole = DEBUG;
+bool is_deezer_rpc_enabled = true;
+bool is_brave_rpc_enabled = true;
 HWND g_hwnd = NULL;
 NOTIFYICONDATA nid = { 0 };
 
@@ -283,6 +287,10 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
             AppendMenu(hMenu, MF_STRING, ID_AUTOSTART,
                        autoStartEnabled ? L"Disabled start on Launch" : L"Enabled start on Launch");
             AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
+            // Checkbox to enabled or disable Deezer RPC
+            AppendMenu(hMenu, MF_STRING | (is_deezer_rpc_enabled ? MF_CHECKED : MF_UNCHECKED), ID_DEEZER_RPC_IS_ENABLED, L"Deezer RPC is Enabled");
+            AppendMenu(hMenu, MF_STRING | (is_brave_rpc_enabled ? MF_CHECKED : MF_UNCHECKED), ID_BRAVE_RPC_IS_ENABLED, L"Brave RPC is Enabled");
+            AppendMenu(hMenu, MF_SEPARATOR, 0, NULL);
             AppendMenu(hMenu, MF_STRING, ID_EXIT, L"Exit");
 
             SetForegroundWindow(hwnd);
@@ -301,6 +309,16 @@ LRESULT CALLBACK WindowProc(HWND hwnd, UINT uMsg, WPARAM wParam, LPARAM lParam) 
                 EnableAutoStart();
                 DebugLog("Demarrage automatique active");
             }
+            return 0;
+
+        case ID_DEEZER_RPC_IS_ENABLED:
+            is_deezer_rpc_enabled = !is_deezer_rpc_enabled;
+            DebugLog("Deezer RPC " + std::string(is_deezer_rpc_enabled ? "enabled" : "disabled"));
+            return 0;
+
+        case ID_BRAVE_RPC_IS_ENABLED:
+            is_brave_rpc_enabled = !is_brave_rpc_enabled;
+            DebugLog("Brave RPC " + std::string(is_brave_rpc_enabled ? "enabled" : "disabled"));
             return 0;
 
         case ID_EXIT:
@@ -420,7 +438,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
         auto id = session.SourceAppUserModelId();
 
         // Si Deezer est actif, on met a jour le statut Discord pour Deezer
-        if (!id.empty() && (std::wstring(id).find(L"deezer") != std::wstring::npos )) {
+        if (!id.empty() && (std::wstring(id).find(L"deezer") != std::wstring::npos ) && is_deezer_rpc_enabled) {
             // clear le statut Brave si Deezer est actif
             brave_client->ClearRichPresence();
             
@@ -494,7 +512,7 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
             } else {
                 deezer_client->ClearRichPresence();
             }
-        } else if (!id.empty() && (std::wstring(id).find(L"Brave") != std::wstring::npos )) {
+        } else if (!id.empty() && (std::wstring(id).find(L"Brave") != std::wstring::npos ) && is_brave_rpc_enabled) {
             // Si Brave est actif, on met a jour le statut Discord pour Brave
             // clear le statut Deezer si Brave est actif
             deezer_client->ClearRichPresence();
