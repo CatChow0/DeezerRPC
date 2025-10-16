@@ -5,6 +5,7 @@
 #include <commctrl.h>
 #pragma comment(lib, "winhttp.lib")
 #pragma comment(lib, "comctl32.lib")
+#pragma comment(lib, "windowsapp.lib")
 
 const bool DEBUG = false;
 
@@ -34,7 +35,8 @@ using json = nlohmann::json;
 using namespace winrt::Windows::Media::Control;
 using namespace winrt::Windows::Foundation;
 
-const uint64_t APPLICATION_ID = 1234921022856237196;
+const uint64_t DEEZER_APP_ID = 1234921022856237196;
+const uint64_t BROWSER_APP_ID = 1428086836760150219;
 std::atomic<bool> running = true;
 bool showConsole = DEBUG;
 HWND g_hwnd = NULL;
@@ -177,6 +179,32 @@ GlobalSystemMediaTransportControlsSession GetDeezerSession(GlobalSystemMediaTran
     return nullptr;
 }
 
+GlobalSystemMediaTransportControlsSession GetCurrentSession(GlobalSystemMediaTransportControlsSessionManager const& manager)
+{
+    auto sessions = manager.GetSessions();
+    if (sessions.Size() == 0) {
+        return nullptr;
+    }
+    // get the active session between deezer and Brave
+    for (uint32_t i = 0; i < sessions.Size(); ++i) {
+        // find the session with the most recent activity
+        auto session = sessions.GetAt(i);
+        if (session == nullptr) {
+            continue;
+        }
+        auto playback = session.GetPlaybackInfo();
+        if (playback == nullptr) {
+            continue;
+        }
+        if (playback.PlaybackStatus() == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing)
+        {
+            return session;
+        }
+    }
+    return nullptr;
+    
+}
+
 void DisableAutoStart() {
     HKEY hKey;
     if (RegOpenKeyEx(HKEY_CURRENT_USER, L"Software\\Microsoft\\Windows\\CurrentVersion\\Run", 0, KEY_SET_VALUE, &hKey) == ERROR_SUCCESS) {
@@ -308,6 +336,27 @@ HWND CreateMessageWindow() {
     return hwnd;
 }
 
+std::shared_ptr<discordpp::Client> CreateClient(uint64_t appId)
+{
+    auto client = std::make_shared<discordpp::Client>();
+
+    client->SetApplicationId(appId);
+    client->AddLogCallback([](auto message, auto severity) {
+        if (DEBUG) {
+            std::cout << "[" << EnumToString(severity) << "] " << message << std::endl;
+        }
+    }, discordpp::LoggingSeverity::Info);
+
+    client->SetStatusChangedCallback([client](discordpp::Client::Status status, discordpp::Client::Error error, int32_t errorDetail) {
+        DebugLog("🔄 Status changed: " + discordpp::Client::StatusToString(status));
+        if (status == discordpp::Client::Status::Ready) {
+            DebugLog("✅ Client prêt !");
+        }
+    });
+    
+    return client;
+}
+
 // Remplace main() par WinMain() pour une application Windows native
 int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine, int nCmdShow) {
     // Creer une console uniquement si DEBUG est active
@@ -330,26 +379,16 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
     std::signal(SIGINT, signalHandler);
 
     DebugLog("🚀 Initialisation Discord SDK...");
-    auto client = std::make_shared<discordpp::Client>();
-    client->SetApplicationId(APPLICATION_ID);
-
-    client->AddLogCallback([](auto message, auto severity) {
-        if (DEBUG) {
-            std::cout << "[" << EnumToString(severity) << "] " << message << std::endl;
-        }
-    }, discordpp::LoggingSeverity::Info);
-
-    client->SetStatusChangedCallback([client](discordpp::Client::Status status, discordpp::Client::Error error, int32_t errorDetail) {
-        DebugLog("🔄 Status changed: " + discordpp::Client::StatusToString(status));
-        if (status == discordpp::Client::Status::Ready) {
-            DebugLog("✅ Client prêt !");
-        }
-    });
+    auto deezer_client = CreateClient(DEEZER_APP_ID);
+    auto brave_client = CreateClient(BROWSER_APP_ID);
 
     // Initialisation du contrôleur media Windows
     GlobalSystemMediaTransportControlsSessionManager manager = GlobalSystemMediaTransportControlsSessionManager::RequestAsync().get();
 
     MSG msg;
+    GlobalSystemMediaTransportControlsSession session = nullptr;
+    GlobalSystemMediaTransportControlsSession OLD_session = nullptr;
+    
     while (running) {
         // Traiter les messages Windows sans bloquer
         while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
@@ -361,9 +400,30 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
                 break;
             }
         }
+        
+        session = GetCurrentSession(manager);
 
-        auto session = GetDeezerSession(manager);
-        if (session) {
+
+        if (session == nullptr && OLD_session != nullptr) {
+            session = OLD_session;
+        }
+
+        if (session == nullptr) {
+            // Plus aucune session du tout, on clear
+            continue;
+        }
+
+        if (OLD_session == nullptr || session.SourceAppUserModelId() != OLD_session.SourceAppUserModelId()) {
+            OLD_session = session;
+        }
+
+        auto id = session.SourceAppUserModelId();
+
+        // Si Deezer est actif, on met a jour le statut Discord pour Deezer
+        if (!id.empty() && (std::wstring(id).find(L"deezer") != std::wstring::npos )) {
+            // clear le statut Brave si Deezer est actif
+            brave_client->ClearRichPresence();
+            
             auto playback = session.GetPlaybackInfo();
             auto props = session.TryGetMediaPropertiesAsync().get();
             auto timeline = session.GetTimelineProperties();
@@ -414,23 +474,90 @@ int WINAPI WinMain(HINSTANCE hInstance, HINSTANCE hPrevInstance, LPSTR lpCmdLine
 
                 activity.SetAssets(assets);
 
-                if (!isPaused) {
+                if (isPlaying) {
+                    double pos = timeline.Position().count() / 1e7;
+                    double dur = (timeline.EndTime() - timeline.StartTime()).count() / 1e7;
+                    auto start = std::chrono::system_clock::now() - std::chrono::seconds((int)pos);
+                    auto end = start + std::chrono::seconds((int)dur);
+
                     discordpp::ActivityTimestamps timestamps;
                     timestamps.SetStart(std::chrono::duration_cast<std::chrono::seconds>(start.time_since_epoch()).count());
                     timestamps.SetEnd(std::chrono::duration_cast<std::chrono::seconds>(end.time_since_epoch()).count());
                     activity.SetTimestamps(timestamps);
                 }
 
-                client->UpdateRichPresence(activity, [](discordpp::ClientResult result) {
+                deezer_client->UpdateRichPresence(activity, [](discordpp::ClientResult result) {
                     if (result.Successful()) {
                         DebugLog("🎮 Rich Presence mise a jour !");
                     }
                 });
             } else {
-                client->ClearRichPresence();
+                deezer_client->ClearRichPresence();
             }
+        } else if (!id.empty() && (std::wstring(id).find(L"Brave") != std::wstring::npos )) {
+            // Si Brave est actif, on met a jour le statut Discord pour Brave
+            // clear le statut Deezer si Brave est actif
+            deezer_client->ClearRichPresence();
+            auto playback = session.GetPlaybackInfo();
+            auto props = session.TryGetMediaPropertiesAsync().get();
+            auto timeline = session.GetTimelineProperties();
+
+            bool isPaused = playback.PlaybackStatus() == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Paused;
+            bool isPlaying = playback.PlaybackStatus() == GlobalSystemMediaTransportControlsSessionPlaybackStatus::Playing;
+
+            if (isPlaying || isPaused) {
+                std::string title_utf8 = winrt::to_string(props.Title());
+                std::string artist_utf8 = winrt::to_string(props.Artist());
+                std::string album_utf8 = winrt::to_string(props.AlbumTitle());
+                double pos = timeline.Position().count() / 1e7;
+                double dur = (timeline.EndTime() - timeline.StartTime()).count() / 1e7;
+
+                auto start = std::chrono::system_clock::now() - std::chrono::seconds((int)pos);
+                auto end = start + std::chrono::seconds((int)dur);
+
+                // Créer l'activité Discord pour Brave (watching video)
+                discordpp::Activity activity;
+                activity.SetType(discordpp::ActivityTypes::Watching);
+                activity.SetState(isPaused ? "⏸️ En pause" : ("par " + artist_utf8));
+                activity.SetDetails("🎬 " + title_utf8);
+
+                // Ajouter les assets d image
+                discordpp::ActivityAssets assets;
+                // Image par defaut pour Brave
+                assets.SetLargeImage("brave_logo");
+                assets.SetLargeText("Brave Browser");
+
+                // Ajouter une petite icône pour l etat de lecture
+                assets.SetSmallImage(isPaused ? "paused_icon" : "playing_icon");
+                assets.SetSmallText(isPaused ? "En pause" : "En lecture");
+
+                activity.SetAssets(assets);
+
+                if (isPlaying) {
+                    double pos = timeline.Position().count() / 1e7;
+                    double dur = (timeline.EndTime() - timeline.StartTime()).count() / 1e7;
+                    auto start = std::chrono::system_clock::now() - std::chrono::seconds((int)pos);
+                    auto end = start + std::chrono::seconds((int)dur);
+
+                    discordpp::ActivityTimestamps timestamps;
+                    timestamps.SetStart(std::chrono::duration_cast<std::chrono::seconds>(start.time_since_epoch()).count());
+                    timestamps.SetEnd(std::chrono::duration_cast<std::chrono::seconds>(end.time_since_epoch()).count());
+                    activity.SetTimestamps(timestamps);
+                }
+
+                brave_client->UpdateRichPresence(activity, [](discordpp::ClientResult result) {
+                    if (result.Successful()) {
+                        DebugLog("🎮 Brave Rich Presence mise a jour !");
+                    }
+                });
+            } else {
+                brave_client->ClearRichPresence();
+            }
+            
         } else {
-            client->ClearRichPresence();
+            // Aucune session Deezer ou Brave active, on clear le statut Discord
+            deezer_client->ClearRichPresence();
+            brave_client->ClearRichPresence();
         }
 
         discordpp::RunCallbacks();
